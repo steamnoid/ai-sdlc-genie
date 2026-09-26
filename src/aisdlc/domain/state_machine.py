@@ -1,11 +1,9 @@
 
 # Tabel of legal stage transitions: {Source_Stage: {Target_Stages_Set}}
-from typing import Set
 
 from aisdlc.domain.models import Stage, WorkItem
 
-
-LEGAL_TRANSITIONS: dict[Stage, Set[Stage]] = {
+LEGAL_TRANSITIONS: dict[Stage, set[Stage]] = {
     Stage.IDLE: {Stage.AWAITING_AGENT_PICKUP},
     Stage.AWAITING_AGENT_PICKUP: {Stage.IN_PROGRESS_BY_AGENT},
     Stage.IN_PROGRESS_BY_AGENT: {Stage.AWAITING_HUMAN_APPROVAL, Stage.AWAITING_AGENT_PICKUP},
@@ -16,7 +14,6 @@ LEGAL_TRANSITIONS: dict[Stage, Set[Stage]] = {
 
 class StateMachineError(Exception):
     """Exception raised when an illegal state transition is attempted."""
-    pass
 
 def validate_state(work_item: WorkItem) -> None:
     """

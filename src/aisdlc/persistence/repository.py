@@ -1,16 +1,19 @@
-from typing import Optional, Sequence
+from collections.abc import Sequence
+
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aisdlc.domain.models import Repository as DomainRepository, WorkItem as DomainWorkItem
-from aisdlc.persistence.models import RepositoryModel, WorkItemModel
+from aisdlc.domain.models import Role, Stage
+from aisdlc.domain.models import WorkItem as DomainWorkItem
+from aisdlc.persistence.models import WorkItemModel
+
 
 class WorkItemRepository:
     """
     Production-grade repository for WorkItems.
     Handles the mapping between Database Models and Domain Models.
     """
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
     
     async def create(self, item: DomainWorkItem) -> DomainWorkItem:
@@ -19,9 +22,9 @@ class WorkItemRepository:
         Maps Domain model -> Database model.
         """
         # Handle repository_id split (e.g. "owner/repo")
-        parts = item.repository_id.split('/')
+        parts = item.repository_id.split("/")
         if len(parts) != 2:
-            raise ValueError(f"repository_id must be in format 'owner/repo'")
+            raise ValueError("repository_id must be in format 'owner/repo'")
 
         owner, repo_name = parts
         
@@ -37,10 +40,10 @@ class WorkItemRepository:
             agent=item.agent,
         )
         self.session.add(db_item)
-        await self.session.flush() # Push to DB but don't commit yet
+        await self.session.flush()
         return item
 
-    async def get_by_id(self, item_id: str) -> Optional[DomainWorkItem]:
+    async def get_by_id(self, item_id: str) -> DomainWorkItem | None:
         """Retrieves a WorkItem and maps it back to a Domain model."""
         query = select(WorkItemModel).where(WorkItemModel.id == item_id)
         result = await self.session.execute(query)
@@ -55,17 +58,18 @@ class WorkItemRepository:
             repository_id=f"{db_item.repository_owner}/{db_item.repository_name}",
             title=db_item.title,
             description=db_item.description,
-            stage=db_item.stage, # Pydantic handles string -> Enum conversion # pyright: ignore[reportArgumentType]
-            role=db_item.role, # pyright: ignore[reportArgumentType]
+            stage=Stage(db_item.stage),
+            role=Role(db_item.role),
             agent=db_item.agent,
         )
 
-    async def update_stage(self, item_id: str, new_stage: str, new_agent: Optional[str]) -> None:
+    async def update_stage(self, item_id: str, new_stage: Stage | str, new_agent: str | None) -> None:
         """Updates only the stage and agent for a given WorkItem."""
+        stage = Stage(new_stage)
         query = (
             update(WorkItemModel)
             .where(WorkItemModel.id == item_id)
-            .values(stage=new_stage, agent=new_agent)
+            .values(stage=stage.value, agent=new_agent)
         )
         await self.session.execute(query)
 
@@ -76,7 +80,7 @@ class WorkItemRepository:
 
     async def list_by_repository(self, repository_id: str) -> Sequence[DomainWorkItem]:
         """Return all work items for a given repostory (owner/repo)."""
-        owner, repo_name = repository_id.split('/')
+        owner, repo_name = repository_id.split("/")
 
         query = select(WorkItemModel).where(
             WorkItemModel.repository_owner == owner,
@@ -91,8 +95,8 @@ class WorkItemRepository:
                 repository_id=f"{db_item.repository_owner}/{db_item.repository_name}",
                 title=db_item.title,
                 description=db_item.description,
-                stage=db_item.stage, # Pydantic handles string -> Enum conversion # pyright: ignore[reportArgumentType]
-                role=db_item.role, # pyright: ignore[reportArgumentType]
+                stage=Stage(db_item.stage),
+                role=Role(db_item.role),
                 agent=db_item.agent,
             )
             for db_item in db_items

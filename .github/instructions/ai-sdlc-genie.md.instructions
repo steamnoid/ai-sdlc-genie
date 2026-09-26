@@ -13,13 +13,23 @@ GitHub repository
       ↓
   discover
       ↓
+  human approval
+      ↓
  PO analysis
+      ↓
+  human approval
       ↓
  QA analysis
       ↓
+  human approval
+      ↓
  architecture analysis
       ↓
+  human approval
+      ↓
  security analysis
+      ↓
+  human approval
       ↓
  implementation planning
       ↓

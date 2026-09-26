@@ -1,7 +1,7 @@
 
 import pytest
 
-from aisdlc.domain.models import WorkItem, Stage
+from aisdlc.domain.models import Stage, WorkItem
 from aisdlc.domain.state_machine import StateMachineError, transition, validate_state
 
 

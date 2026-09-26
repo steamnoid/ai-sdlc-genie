@@ -1,8 +1,7 @@
 
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Index, String, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -11,7 +10,6 @@ class Base(DeclarativeBase):
     Base class for all database models.
     Uses SQLAlchemy 2.0 Declarative style for full type safety.
     """
-    pass
 
 class RepositoryModel(Base):
     """
@@ -50,17 +48,17 @@ class WorkItemModel(Base):
     # Store enums as strings for portability and easy debugging
     stage: Mapped[str] = mapped_column(String(50), index=True)
     role: Mapped[str] = mapped_column(String(50), index=True)
-    agent: Mapped[Optional[str]] = mapped_column(String(100), index=True, nullable=True)
+    agent: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
 
     # Precise timestamps with UTC enforcement
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
     # Index for performance: searching for all items assigned to a specific agent in a specific stage

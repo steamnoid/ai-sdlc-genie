@@ -23,6 +23,8 @@ dependencies = [
     "rich>=13.0",
     "greenlet>=3.5.6",
     "aiosqlite>=0.22.1",
+    "langchain-community>=0.4.2",
+    "langchain-ollama>=1.1.0",
 ]
 
 [project.optional-dependencies]
@@ -46,7 +48,7 @@ aialm = "aisdlc.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "auto"
+asyncio_mode = "strict"
 
 [tool.mypy]
 python_version = "3.12"

@@ -1,15 +1,17 @@
+
 import pytest
-import asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from aisdlc.domain.models import WorkItem, Stage, Role
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from aisdlc.domain.models import Role, Stage, WorkItem
 from aisdlc.persistence.models import Base
 from aisdlc.persistence.repository import WorkItemRepository
 
 # Use SQLite in-memory for lightning fast tests
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-@pytest.fixture
-async def db_session():
+@pytest_asyncio.fixture
+async def db_session() -> AsyncSession:
     """Fixture to set up a fresh in-memory database for reach test."""
     engine = create_async_engine(TEST_DATABASE_URL)
     async with engine.begin() as conn:
@@ -23,7 +25,7 @@ async def db_session():
     await engine.dispose()
 
 @pytest.fixture
-def repo(db_session):
+def repo(db_session: AsyncSession) -> WorkItemRepository:
     """Provides a WorkItemRepository instance."""
     return WorkItemRepository(db_session)
 
