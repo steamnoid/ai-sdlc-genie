@@ -1,0 +1,15 @@
+---
+# Opt-in. The e2e_smoke hook calls a real model, so it is installed inert and
+# only runs when AISDLC_E2E_SMOKE=1 is set. See scripts/pre-commit-e2e-smoke.sh.
+default_language_version:
+  python: python3.13
+
+repos:
+  - repo: local
+    hooks:
+      - id: e2e-smoke
+        name: e2e smoke (real agent, opt-in)
+        entry: scripts/pre-commit-e2e-smoke.sh
+        language: script
+        pass_filenames: false
+        stages: [pre-commit]
