@@ -112,6 +112,14 @@ async def test_discovery_agent_produces_a_grounded_report_against_a_real_model(
     summary = report.architecture_summary.strip()
     assert len(summary) > 80, f"architecture_summary is too thin to be real: {summary!r}"
 
+    # Assert: the report names concrete components, otherwise groundedness
+    # below would have nothing to check and the whole e2e test would be
+    # vacuous. A real model reading a real repository can always name files.
+    assert report.identified_files or report.key_components, (
+        "the report names no files and no components, so groundedness cannot "
+        "be verified; a real repository always has identifiable structure"
+    )
+
     # Assert: no placeholder text survived the prompt's plea for content
     haystack = " ".join(
         [summary, *(entry for entry in report.key_components if entry)]
