@@ -124,8 +124,8 @@ and human approval gates. Making the boundary between deterministic software and
 |---|---|---|
 | 1 | domain models, state machine, pytest | done |
 | 2 | LangGraph: state, routing, nodes, HITL interrupt | done (2 nodes only) |
-| 3 | first real agent: Repository Discovery | done (no real-agent e2e — see §10) |
-| **0** | **test + e2e harness** | **pending — do this first** |
+| 3 | first real agent: Repository Discovery | done |
+| 0 | test + e2e harness, first real-agent gate | **done** |
 | 4 | tools + MCP (GitHub, filesystem, test runner) | pending |
 | 5 | RAG: indexing, embeddings, pgvector, retrieval | pending |
 | 6 | remaining agents: PO, QA, ARCH, SEC, DEV_PLAN, DEV_IMPL, QA_VERIFY, PR | pending |
@@ -230,11 +230,13 @@ src/aisdlc/
 └── tools/           # Layer A. repository.py (GitHubClient), resilience.py (RetryPolicy, retry_async)
 
 tests/
+├── conftest.py      # opt-in boundary: fixtures, skip-with-reason
+├── support/         # pytest-free: gating.py, fakes.py
 ├── unit/            # no network, no model
-├── graph/           # [planned] LangGraph flows, fake models
-├── integration/     # [planned] @pytest.mark.integration, real infra, opt-in
-├── e2e/             # [planned] REAL agent, REAL model, REAL repository
-└── evals/           # [planned] golden datasets
+├── graph/           # LangGraph flows, fake models
+├── e2e/             # REAL agent, REAL model, REAL repository
+├── integration/     # @pytest.mark.integration, real infra, opt-in
+└── evals/           # golden datasets
 
 evals/  prompts/  docs/  scripts/  docker/     # [planned, §5]
 ```
@@ -273,22 +275,28 @@ implemented (§39). The package is `aisdlc`, while §5 sketches `aialm` — the 
 # 6. Commands
 
 ```bash
-uv sync                              # install deps + repoint the editable package at this repo
-uv run pytest -q                     # default suite: unit + graph, no network, no keys
-uv run pytest -m e2e_smoke           # cheap real-agent gate: 1 repo, 1 provider
-uv run pytest -m e2e                 # full real-agent matrix (expensive)
-uv run pytest -m integration         # real Postgres / pgvector / Redis
-uv run ruff check .                  # lint
-uv run mypy src                      # type check
+uv sync --all-extras                    # install deps + repoint the editable package
+uv run pytest -q                         # default suite: unit + graph, no network, no keys
+uv run pytest -m e2e_smoke               # cheap real-agent gate: 1 repo, 1 provider
+uv run pytest -m e2e                     # full real-agent matrix (expensive)
+uv run pytest -m integration             # real Postgres / pgvector / Redis
+uv run ruff check .                      # lint
+uv run mypy src                          # type check
 ```
+
+> **`uv sync` alone removes the extras.** The `langchain` and `dev` extras hold
+> `langgraph`, `langchain-openai`, `pytest`, `ruff` and `mypy`. A bare `uv sync`
+> uninstalls them, and the next command fails for reasons unrelated to your
+> change. Always `uv sync --all-extras`.
 
 > **Before trusting any result, confirm you are running *this* repo's code:**
 > `uv run python -c "import aisdlc; print(aisdlc.__file__)"`
-> It must resolve under `…/ai-sdlc-genie-opencode/src`. The checked-in `.venv` currently points at
-> a sibling checkout, which silently runs the wrong sources (§10).
+> It must resolve under `…/ai-sdlc-genie-opencode/src`. The checked-in `.venv`
+> pointed at a sibling checkout until Phase 0 repointed it, which silently ran
+> the wrong sources.
 
-Always use `uv run`. A bare `python -m pytest` may bind to the wrong interpreter or the wrong
-package path.
+Always use `uv run`. A bare `python -m pytest` may bind to the wrong interpreter
+or the wrong package path.
 
 ---
 
@@ -307,6 +315,14 @@ Four real-dependency tiers, three invocations. The default `pytest` run touches 
 credentials, keeping §22 satisfied ("normal `pytest` must remain fast and deterministic"), while
 `e2e_smoke` gives every commit a real-agent signal. Where a test needs a key that is absent, it must
 `skip` **with the reason printed** — never pass vacuously.
+
+`tests/support/` holds the shared, pytest-free pieces: `gating.py` decides *whether* a real tier can
+run and *why* not, `fakes.py` models the provider call shape once so three mocked tests do not each
+invent their own approximation.
+
+> **Removing a credential in a test:** set the variable to an **empty string**, never `env -u`.
+> `llm/factory.py` calls `load_dotenv()` at import, so an *absent* variable is refilled from the
+> developer's `.env` and the run makes a live call; a variable already present is not overridden.
 
 ## Rules
 
@@ -345,19 +361,17 @@ credentials, keeping §22 satisfied ("normal `pytest` must remain fast and deter
 
 Do not build everything at once (§47). One slice, one cycle set, one gate.
 
-### Phase 0 — test + e2e harness *(do this first)*
+### Phase 0 — test + e2e harness *(done 2026-09-26)*
 
-Nothing else scales until this exists. Exit gate: `pytest -q`, `ruff`, `mypy` clean, **and**
-`pytest -m e2e_smoke` green against a real provider.
+Exit gate, all met: `pytest -q`, `ruff`, `mypy` clean, **and** `pytest -m e2e_smoke` green against
+a real provider on both `openai` and `ollama`.
 
-- `tests/conftest.py`: skip-reason gating, real-LLM fixture, provider fixture, `E2E_REPOSITORY` fixture.
-- Register markers `graph`, `e2e_smoke`, `e2e`, `integration`; deselect the real-dependency tiers
-  from the default run so §22 still holds.
-- Create `tests/{graph,integration,evals}/`; relocate the two fully-mocked files out of `tests/e2e/`.
-- **The first true e2e test: Discovery against a real model on a real repository** — the highest-value
-  missing test in the project, since the only real agent has never been run unmocked.
-- Ship a pre-commit hook for `e2e_smoke`, **opt-in via `AISDLC_E2E_SMOKE=1`**, so a paid endpoint is
-  never called by surprise.
+- `tests/conftest.py` — skip-reason gating, real-LLM fixture, provider fixture, `E2E_REPOSITORY`.
+- `tests/support/gating.py` — decides whether a real tier can run, and prints why not.
+- Markers `graph`, `e2e_smoke`, `e2e`, `integration` registered; real tiers deselected by default.
+- `tests/{graph,integration,evals}/` created; the two misfiled mocked files moved to `tests/graph/`.
+- `tests/e2e/test_discovery_real_model.py` — the first test that patches nothing.
+- `.pre-commit-config.yaml` + `scripts/pre-commit-e2e-smoke.sh`, opt-in via `AISDLC_E2E_SMOKE=1`.
 
 ### Then, in order
 
@@ -388,33 +402,59 @@ Each item closes only when a test or command proves it — not by a manual run.
 
 ---
 
-# 10. Known gaps — snapshot of 2026-09-26
+# 10. Known gaps — snapshot of 2026-09-26, after Phase 0
 
 Stale the moment code changes. Verify before trusting; fix via Rule 0 and update this list.
 
+## Closed by Phase 0
+
+| Was | Now |
+|---|---|
+| `.venv` pointed at a sibling checkout | `uv sync --all-extras` repoints it; `aisdlc.__file__` verified |
+| `nodes.py` used 3 undefined names, 4 tests errored at collection | imports added; mypy clean |
+| 4 discovery tests mocked `list_files` with a bare list | mocks honour the `RepositoryListing` contract |
+| `tests/e2e/` held two fully-mocked files | moved to `tests/graph/`, marked `graph` |
+| markers unregistered; default run collected e2e | 4 markers registered, real tiers deselected by default |
+| no `conftest.py`, no skip-reason gating | `tests/conftest.py` + `tests/support/gating.py` |
+| discovery hand-rolled `json.loads` + normalizer | LangChain `with_structured_output(DiscoveryReport)` |
+| quality rules in prompt text | asserted in `tests/e2e/test_discovery_real_model.py` |
+| no real-agent test existed | Discovery verified on a real model and a real repository |
+| §29 cloud+local unproven | both pass: `openai`@`ollama.com`/`gemma4:31b` 6.5s, `ollama`@`:11434`/`gemma4:12b-mlx` 171s |
+
+## Still open
+
 | # | Gap | Location |
 |---|---|---|
-| 1 | `.venv` editable install points at a **sibling checkout** (`…/ai-sdlc-genie/src`), so `pytest` silently runs the wrong sources. Fix: `uv sync`. | `.venv/…/_editable_impl_aisdlc.pth` |
-| 2 | `Final`, `Sequence`, `RepositoryListing` are used but never imported → module fails to import, **4 of 17 tests error during collection**, ruff 9 errors, mypy 6 errors. Fix: extend the import block. | `src/aisdlc/graph/nodes.py:45,52-54,57,73` |
-| 3 | `human_approval` has no outgoing edge, so the graph can never reach `READY` or `DONE` — the workflow terminates at the first approval. | `src/aisdlc/graph/workflow.py:19-30` |
-| 4 | `STAGE_TO_NODE[READY] = "discover"` sends approved work back into discovery instead of to the next agent. | `src/aisdlc/graph/router.py:11` |
-| 5 | `READY`/`DONE` both route to `discover`; the router has one target per stage and no post-approval path. | `src/aisdlc/graph/router.py:6-13` |
-| 6 | Default DB URL uses `postgresql+asyncpg://` while the project depends on `psycopg[binary]`; `asyncpg` is not installed. | `src/aisdlc/persistence/session.py:9` |
-| 7 | Module-level `db_manager` singleton builds an engine at import time — hostile to test isolation and to a clean `/health` startup. | `src/aisdlc/persistence/session.py:53` |
-| 8 | `[project.scripts] aialm = "aisdlc.cli:app"` points at a module that does not exist; `typer` and `rich` are declared but unused. `httpx` is imported directly but never declared. | `pyproject.toml:19,47`, `src/aisdlc/tools/repository.py:19` |
-| 9 | Discovery hand-rolls `json.loads` plus a normalizer instead of LangChain structured output, so §14's validate → retry/repair loop is only partially implemented. | `src/aisdlc/graph/nodes.py:150-192` |
-| 10 | **`tests/e2e/` contains no e2e** — both files mock `get_llm` and `list_files`; `test_llm_connection.py` patches the factory and asserts a `Mock` passthrough. Zero of 17 tests touch a real model or real GitHub. → Phase 0. | `tests/e2e/test_llm_connection.py:19`, `tests/e2e/test_discovery_flow.py:36-38` |
-| 11 | **Quality rules in prompt text** — the prompt forbids placeholder output and threatens failure, because no test asserts it. → Rule 0.8 corollary. | `src/aisdlc/graph/nodes.py:130-134` |
-| 12 | `transition()` copies the work item but never refreshes `updated_at`; the ORM relies on `onupdate` instead, so the domain and persistence layers disagree on who owns that field. | `src/aisdlc/domain/state_machine.py:53-56`, `src/aisdlc/persistence/models.py:57-62` |
-| 13 | `tests/unit/test_llm_factory.py` is **empty** — the model-factory layer (§3, provider abstraction) is untested. | `tests/unit/test_llm_factory.py` |
-| 14 | `uv.lock` exists on disk but is gitignored and untracked, contradicting §2/§5 which mandate `uv` with a committed lockfile. | `.gitignore:44` |
-| 15 | No `conftest.py`, no registered markers, no CI. `pytest-asyncio` 1.4 is installed without `asyncio_default_fixture_loop_scope`. | `tests/`, `pyproject.toml:49-51` |
+| 1 | `human_approval` has no outgoing edge, so the graph can never reach `READY` or `DONE` — the workflow terminates at the first approval. | `src/aisdlc/graph/workflow.py:19-30` |
+| 2 | `STAGE_TO_NODE[READY] = "discover"` sends approved work back into discovery; the router has one target per stage and no post-approval path. | `src/aisdlc/graph/router.py:6-13` |
+| 3 | Default DB URL uses `postgresql+asyncpg://` while the project depends on `psycopg[binary]`; `asyncpg` is not installed. | `src/aisdlc/persistence/session.py:9` |
+| 4 | Module-level `db_manager` singleton builds an engine at import time. | `src/aisdlc/persistence/session.py:53` |
+| 5 | `aialm = "aisdlc.cli:app"` points at a module that does not exist; `typer`/`rich` declared but unused; `httpx` imported but never declared. | `pyproject.toml:19,47` |
+| 6 | `transition()` never refreshes `updated_at`; the ORM relies on `onupdate`, so the two layers disagree on who owns it. | `domain/state_machine.py:53-56`, `persistence/models.py:57-62` |
+| 7 | `tests/unit/test_llm_factory.py` is empty — the provider abstraction is untested. | `tests/unit/test_llm_factory.py` |
+| 8 | `uv.lock` is gitignored and untracked, though §2/§5 mandate `uv` with a committed lockfile. | `.gitignore:44` |
+| 9 | No CI. The commit gate is a local pre-commit hook, opt-in via `AISDLC_E2E_SMOKE=1`. | `.pre-commit-config.yaml` |
+| 10 | `load_dotenv()` runs at import in `llm/factory.py`, so a developer's `.env` can silently satisfy a credential that looks absent. | `src/aisdlc/llm/factory.py:21` |
+| 11 | `ci_system` and `suggested_changes` still come back empty or unset from real runs, so nothing asserts them. | `DiscoveryReport` |
 
-**Recorded baseline:** `13 passed, 4 errors` of 17 collected · ruff 9 · mypy 6 — all from gap #2.
+**Structured-output reality** (measured, not assumed — both providers, same graph):
+
+| method | `openai` @ `ollama.com/v1` | `ollama` @ `localhost:11434` |
+|---|---|---|
+| `function_calling` | works | fails (`Unknown tool type`) |
+| `json_schema` | fails (returns prose) | works |
+| `json_mode` | fails | fails (wrong shape) |
+
+Hence `STRUCTURED_OUTPUT_METHODS` is an ordered, bounded list rather than one
+binding. A provider supporting neither method still has no repair path — §14's
+validate → retry/repair loop is only partly implemented.
 
 **Environment for real-agent work:** cloud via `openai` at `https://ollama.com/v1`
-(`LLM_MODEL=gemma4:31b`), local Ollama reachable on `:11434`, and `GITHUB_TOKEN` unset — so the
-unauthenticated archive fallback is the de facto GitHub path (`tools/repository.py:256`).
+(`LLM_MODEL=gemma4:31b`), local Ollama on `:11434` (`gemma4:12b-mlx`), and
+`GITHUB_TOKEN` unset — the unauthenticated REST tree path works for small
+repositories, the archive fallback is the backstop (`tools/repository.py:256`).
+`gh` is authenticated on this host, so the REST API is available for §45's PR step
+without the token living in `.env`.
 
 ---
 
