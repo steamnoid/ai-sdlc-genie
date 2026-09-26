@@ -2,7 +2,8 @@ import inspect
 import json
 import logging
 import re
-from typing import Any, Final, Sequence
+from collections.abc import Sequence
+from typing import Any, Final
 
 from langchain_core.messages import HumanMessage, SystemMessage
 

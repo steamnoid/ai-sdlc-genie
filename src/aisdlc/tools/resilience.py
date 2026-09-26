@@ -11,11 +11,9 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Final, TypeVar
+from typing import Final
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 #: HTTP outcomes that justify another attempt. Anything else fails fast.
 RETRYABLE_STATUS_CODES: Final[frozenset[int]] = frozenset({408, 425, 429, 500, 502, 503, 504})
@@ -59,7 +57,7 @@ class RetryExhaustedError(RuntimeError):
     """Raised when an operation keeps failing with a retryable outcome."""
 
 
-async def retry_async(
+async def retry_async[T](
     operation: Callable[[], Awaitable[T]],
     *,
     policy: RetryPolicy | None = None,
@@ -90,7 +88,7 @@ async def retry_async(
     for attempt in range(1, active_policy.attempts + 1):
         try:
             return await operation()
-        except Exception as error:  # noqa: BLE001 - re-raised with policy applied
+        except Exception as error:  # re-raised below with the policy applied
             last_error = error
             if attempt >= active_policy.attempts or not retryable(error):
                 raise

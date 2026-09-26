@@ -14,7 +14,7 @@ import os
 import tarfile
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Self
 
 import httpx
 
@@ -165,7 +165,7 @@ class GitHubClient:
             headers=self._headers,
         )
 
-    async def __aenter__(self) -> GitHubClient:
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *exc_info: object) -> None:
