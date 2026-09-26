@@ -1,0 +1,1904 @@
+# AGENTS.md — AI SDLC Agentic OSS
+
+## 0. Mission
+
+Build a production-quality open-source **AI-native Software Development Life Cycle (SDLC) system**.
+
+The system takes a public GitHub repository as input and uses a stateful multi-agent workflow to:
+
+```text
+GitHub repository
+      ↓
+   onboard
+      ↓
+  discover
+      ↓
+ PO analysis
+      ↓
+ QA analysis
+      ↓
+ architecture analysis
+      ↓
+ security analysis
+      ↓
+ implementation planning
+      ↓
+ developer implementation
+      ↓
+ QA verification
+      ↓
+ human approval
+      ↓
+ GitHub Pull Request
+```
+
+The project is intentionally designed as a **production-grade Agentic AI engineering system**, not as a chatbot.
+
+The implementation must demonstrate:
+
+* LangGraph
+* LangChain
+* LangSmith
+* MCP
+* Pydantic
+* Python
+* pytest
+* structured LLM outputs
+* stateful agents
+* human-in-the-loop
+* deterministic state transitions
+* tool calling
+* RAG / repository knowledge
+* agent evaluation
+* observability
+* Docker
+* FastAPI
+* PostgreSQL
+* pgvector
+* Redis where useful
+* Promptfoo and/or DeepEval
+* GitHub integration
+* OpenAI-compatible models
+* Ollama-compatible local models
+
+Do NOT add technologies merely because they are listed above.
+
+Each technology must solve a concrete problem.
+
+---
+
+# 1.1 Production Engineering Standards
+
+The system must be built to production-grade standards:
+
+* **Strict Typing**: Mandatory use of static type checking (Mypy/Pyright). Every function must have explicit input and output types.
+* **Immutability**: Prefer immutable data structures (e.g., Pydantic `frozen=True`) to prevent side effects in multi-agent workflows.
+* **Async-First I/O**: All network and database operations must be asynchronous (`asyncio`) to ensure high throughput and non-blocking execution.
+* **Resilience**: Every external API call must implement explicit timeouts and a retry strategy with exponential backoff.
+* **Defensive Coding**: Validate all external inputs at the boundary before they enter the domain logic.
+
+---
+
+# 1. Core architectural principle
+
+The project has three fundamentally different layers.
+
+## Layer A — deterministic application logic
+
+Responsible for:
+
+* state
+* invariants
+* permissions
+* transitions
+* persistence
+* GitHub operations
+* filesystem operations
+* test execution
+* validation
+* API contracts
+
+This layer MUST NOT depend on an LLM.
+
+If something can be deterministic, make it deterministic.
+
+---
+
+## Layer B — agentic reasoning
+
+Responsible for:
+
+* understanding repository context
+* analyzing requirements
+* generating acceptance criteria
+* generating QA scenarios
+* architecture analysis
+* security analysis
+* implementation planning
+* code generation
+* reviewing generated changes
+
+This layer uses LangGraph + LangChain.
+
+---
+
+## Layer C — observability and evaluation
+
+Responsible for:
+
+* traces
+* runs
+* latency
+* token usage
+* model comparison
+* evaluation datasets
+* regression tests
+* agent quality
+
+Use LangSmith where appropriate.
+
+Use Promptfoo / DeepEval for automated evaluations.
+
+## Production Evaluation Metrics
+* **Regression Testing**: Automated checks to ensure new prompt versions do not break existing golden datasets.
+* **Latency & Token Budget**: Monitor and enforce constraints on response time and token usage per agent run.
+* **Groundedness**: Quantifiable metrics to ensure agent outputs are derived from retrieved context, not hallucinations.
+
+---
+
+# 2. Technology stack
+
+Use Python 3.12+.
+
+Use `uv` for dependency and environment management.
+
+Preferred stack:
+
+```text
+Python
+uv
+FastAPI
+Pydantic v2
+LangChain
+LangGraph
+LangSmith
+MCP
+PostgreSQL
+pgvector
+Redis
+pytest
+pytest-asyncio
+Docker
+GitHub API
+Promptfoo
+DeepEval
+```
+
+Use current stable versions compatible with each other.
+
+Do NOT blindly copy package versions from old tutorials.
+
+Before implementing LangChain/LangGraph functionality:
+
+1. inspect the current official documentation;
+2. use the current APIs;
+3. avoid deprecated APIs;
+4. prefer the current Graph API of LangGraph;
+5. do not invent APIs.
+
+Official LangGraph documentation is the source of truth for LangGraph APIs.
+
+---
+
+# 3. Model provider abstraction
+
+The application MUST NOT hard-code one model provider.
+
+Create a model factory.
+
+Example conceptual configuration:
+
+```env
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-5
+```
+
+or:
+
+```env
+LLM_PROVIDER=ollama
+LLM_MODEL=qwen3
+```
+
+or another OpenAI-compatible provider.
+
+The rest of the application must not care which provider is used.
+
+The model factory should expose a common LangChain chat-model interface.
+
+Support structured output.
+
+Do not scatter model initialization across agents.
+
+---
+
+# 4. Repository concept
+
+The primary entity is:
+
+```text
+Repository
+```
+
+Example:
+
+```json
+{
+  "owner": "steamnoid",
+  "name": "example-repository",
+  "default_branch": "main"
+}
+```
+
+A repository is the unit of analysis.
+
+The system must be capable of onboarding arbitrary public GitHub repositories.
+
+Do not hard-code the original `ai-alm-oss` repository.
+
+---
+
+# 5. Project structure
+
+Use a structure similar to:
+
+```text
+.
+├── src/
+│   └── aialm/
+│       ├── api/
+│       ├── application/
+│       ├── domain/
+│       ├── graph/
+│       ├── agents/
+│       ├── tools/
+│       ├── mcp/
+│       ├── llm/
+│       ├── retrieval/
+│       ├── persistence/
+│       ├── evaluation/
+│       └── observability/
+│
+├── tests/
+│   ├── unit/
+│   ├── integration/
+│   ├── graph/
+│   └── evals/
+│
+├── evals/
+│   ├── datasets/
+│   ├── graders/
+│   └── scenarios/
+│
+├── prompts/
+│
+├── docs/
+│
+├── scripts/
+│
+├── docker/
+│
+├── pyproject.toml
+├── uv.lock
+├── Dockerfile
+├── docker-compose.yml
+├── langgraph.json
+├── .env.example
+├── AGENTS.md
+└── README.md
+```
+
+Keep domain logic independent from infrastructure.
+
+---
+
+# 6. Domain state machine
+
+The ticket/work-item state machine is a first-class domain object.
+
+Never let an LLM directly mutate state.
+
+Use deterministic code.
+
+The conceptual state is:
+
+```text
+STAGE
+ROLE
+AGENT
+```
+
+## STAGE
+
+Allowed values:
+
+```text
+IDLE
+AWAITING_HUMAN_APPROVAL
+IN_PROGRESS_BY_AGENT
+AWAITING_AGENT_PICKUP
+READY
+DONE
+```
+
+## ROLE
+
+Allowed values:
+
+```text
+PO
+DEV
+QA
+SEC
+ARCH
+AI
+```
+
+## AGENT
+
+Agent names are explicit identifiers.
+
+Examples:
+
+```text
+aialm-po-analyze
+aialm-qa-analyze
+aialm-arch-analyze
+aialm-sec-analyze
+aialm-dev-plan
+aialm-dev-impl
+aialm-qa-verify
+aialm-pr
+```
+
+Use `None` instead of the string `"none"` internally.
+
+---
+
+# 7. State invariants
+
+Implement explicit validation.
+
+Invariant:
+
+```text
+AGENT=None
+    ↔
+STAGE ∈ {
+    IDLE,
+    AWAITING_HUMAN_APPROVAL,
+    READY,
+    DONE
+}
+```
+
+and:
+
+```text
+AGENT != None
+    ↔
+STAGE ∈ {
+    AWAITING_AGENT_PICKUP,
+    IN_PROGRESS_BY_AGENT
+}
+```
+
+Additional rules:
+
+* only one active agent owns a work item;
+* an agent may mutate only work assigned to it;
+* `DONE` has no active agent;
+* `AI` is a transient handoff role;
+* illegal transitions must fail deterministically;
+* LLM output can never bypass transition validation.
+
+Implement:
+
+```python
+transition(current_state, requested_transition)
+```
+
+and:
+
+```python
+validate_state(state)
+```
+
+with exhaustive tests.
+
+---
+
+# 8. Legal transitions
+
+Implement an explicit transition table.
+
+Allowed transitions:
+
+```text
+IDLE
+  → AWAITING_AGENT_PICKUP
+
+AWAITING_AGENT_PICKUP
+  → IN_PROGRESS_BY_AGENT
+
+IN_PROGRESS_BY_AGENT
+  → AWAITING_HUMAN_APPROVAL
+
+IN_PROGRESS_BY_AGENT
+  → AWAITING_AGENT_PICKUP
+
+AWAITING_HUMAN_APPROVAL
+  → AWAITING_AGENT_PICKUP
+
+AWAITING_HUMAN_APPROVAL
+  → DONE
+
+READY
+  → AWAITING_AGENT_PICKUP
+```
+
+No implicit transitions.
+
+No "magic" status changes.
+
+No LLM-generated arbitrary states.
+
+---
+
+# 9. LangGraph architecture
+
+LangGraph is the orchestration layer.
+
+The graph should model the lifecycle of a work item.
+
+Conceptually:
+
+```text
+START
+  ↓
+LOAD_STATE
+  ↓
+ROUTE
+  ├── DISCOVER
+  ├── PO
+  ├── QA
+  ├── ARCH
+  ├── SEC
+  ├── DEV_PLAN
+  ├── DEV_IMPL
+  ├── QA_VERIFY
+  ├── HUMAN_APPROVAL
+  └── PR
+```
+
+The graph MUST contain explicit state.
+
+Use typed graph state.
+
+Prefer:
+
+```python
+class AgentState(BaseModel):
+    ...
+```
+
+or a strongly typed equivalent compatible with current LangGraph APIs.
+
+The graph should not contain business logic that belongs in the domain layer.
+
+---
+
+# 10. Agent responsibilities
+
+Create specialized agents.
+
+## Repository Discovery Agent
+
+Responsibilities:
+
+* inspect repository structure
+* identify languages
+* identify frameworks
+* identify build system
+* identify tests
+* identify CI
+* identify architecture
+* create repository inventory
+
+Output MUST be structured.
+
+---
+
+## Product Analyst Agent
+
+Responsibilities:
+
+* understand repository/project
+* identify candidate improvements
+* generate requirements
+* generate acceptance criteria
+* identify ambiguity
+
+Must not modify source code.
+
+---
+
+## QA Analyst Agent
+
+Responsibilities:
+
+* analyze requirements
+* generate test strategy
+* generate acceptance tests
+* identify edge cases
+* identify regression risks
+* identify missing test coverage
+
+Do not blindly trust LLM-generated tests.
+
+---
+
+## Architecture Agent
+
+Responsibilities:
+
+* analyze architecture
+* identify relevant modules
+* identify dependencies
+* propose implementation boundaries
+* identify architectural risks
+
+---
+
+## Security Agent
+
+Responsibilities:
+
+* inspect repository for obvious security risks
+* identify authentication/authorization concerns
+* inspect dependency/security configuration
+* identify secrets handling issues
+* provide recommendations
+
+This is an advisory analysis, not a replacement for specialized security scanners.
+
+---
+
+## Developer Planning Agent
+
+Responsibilities:
+
+* convert approved requirements into implementation plan
+* identify files to modify
+* identify tests to add
+* identify dependencies
+* identify migration requirements
+
+It MUST NOT modify code.
+
+---
+
+## Developer Implementation Agent
+
+Responsibilities:
+
+* implement approved plan
+* modify repository
+* run tests
+* report changes
+
+It must operate only after the implementation plan has been approved.
+
+---
+
+## QA Verification Agent
+
+Responsibilities:
+
+* inspect implementation
+* execute tests
+* inspect diff
+* identify regressions
+* validate acceptance criteria
+
+It should produce structured verification results.
+
+---
+
+## PR Agent
+
+Responsibilities:
+
+* prepare final change summary
+* prepare PR title/body
+* verify that required gates passed
+* create/update GitHub Pull Request only after explicit human approval.
+
+---
+
+# 11. Human-in-the-loop
+
+Human approval is a hard architectural boundary.
+
+The system must support:
+
+```text
+AI proposes
+      ↓
+human reviews
+      ↓
+human approves
+      ↓
+AI continues
+```
+
+Never allow:
+
+```text
+AI proposes
+      ↓
+AI approves itself
+```
+
+Human approval must be represented in durable graph state.
+
+Use LangGraph's current interrupt/HITL capabilities where appropriate.
+
+The workflow must be resumable after approval.
+
+---
+
+# 12. MCP
+
+Use MCP as the tool integration boundary.
+
+Create MCP-compatible tools for operations such as:
+
+```text
+github.read_repository
+github.read_file
+github.search_code
+github.create_branch
+github.create_pull_request
+
+filesystem.list
+filesystem.read
+filesystem.write
+
+shell.run_tests
+shell.run_command
+
+repository.search
+repository.get_metadata
+```
+
+Do not expose arbitrary unrestricted shell execution by default.
+
+Every dangerous tool should have explicit permission boundaries.
+
+The application should be able to use MCP tools through the current LangChain/LangGraph MCP integration where appropriate.
+
+Do not duplicate MCP functionality unnecessarily.
+
+## Synchronization Strategy
+* **Just-in-Time (JIT) Validation**: For critical transitions (e.g., creating a PR), the system must fetch the current state from the external API (GitHub/Jira) immediately before validating the transition.
+* **Webhook-driven Sync**: The system must be reactive to external changes via webhooks to maintain near real-time synchronization.
+* **Conflict Resolution**: When external and internal states diverge, the external state (GitHub/Jira) is considered the ground truth.
+
+---
+
+# 13. Tool contracts
+
+Every tool must have:
+
+* typed input;
+* typed output;
+* clear description;
+* deterministic error behavior;
+* timeout;
+* logging;
+* tests.
+
+Never pass unstructured dictionaries through the entire application when a Pydantic model can express the contract.
+
+---
+
+# 14. Pydantic
+
+Use Pydantic models as the canonical application contracts.
+
+Examples:
+
+```text
+Repository
+WorkItem
+AgentState
+AcceptanceCriterion
+Requirement
+TestScenario
+ArchitectureFinding
+SecurityFinding
+ImplementationPlan
+VerificationResult
+PullRequestRequest
+```
+
+LLM structured output should map directly into validated Pydantic models.
+
+If validation fails:
+
+```text
+LLM output
+   ↓
+Pydantic validation
+   ↓
+failure
+   ↓
+retry / repair
+```
+
+Never silently accept malformed model output.
+
+---
+
+# 15. Repository RAG
+
+Implement repository retrieval.
+
+The system should be able to:
+
+1. clone/download a repository;
+2. enumerate relevant files;
+3. chunk source/documentation;
+4. generate embeddings;
+5. store embeddings in PostgreSQL + pgvector;
+6. retrieve relevant context for agents.
+
+Do not embed:
+
+```text
+.git
+node_modules
+.venv
+dist
+build
+coverage
+binary files
+generated files
+large lockfiles
+```
+
+unless explicitly needed.
+
+Use metadata:
+
+```text
+repository
+path
+language
+symbol
+chunk
+commit
+```
+
+Retrieval should support filtering by repository.
+
+---
+
+# 16. RAG quality
+
+Do not assume vector search alone is sufficient.
+
+Implement a clean retrieval interface:
+
+```python
+retrieve(query, repository_id, filters=None)
+```
+
+Allow future addition of:
+
+* hybrid search
+* reranking
+* lexical search
+* symbol-aware retrieval
+
+Do not over-engineer the first version.
+
+---
+
+# 17. LangSmith
+
+Integrate LangSmith tracing.
+
+Trace:
+
+* graph execution;
+* agent calls;
+* LLM calls;
+* tool calls;
+* retrieval;
+* retries;
+* human approval boundaries;
+* final result.
+
+Use meaningful metadata:
+
+```text
+repository
+work_item
+agent
+stage
+model
+environment
+```
+
+Do not log secrets.
+
+Do not log credentials.
+
+Do not blindly dump entire repositories into telemetry.
+
+LangSmith should be useful for debugging and evaluating the system, not just installed as a dependency.
+
+---
+
+# 18. Evaluation architecture
+
+AI output is not considered correct merely because an LLM generated it.
+
+Build an evaluation layer.
+
+Evaluate:
+
+### Product analysis
+
+* requirement relevance
+* acceptance criterion completeness
+* ambiguity detection
+
+### QA
+
+* scenario coverage
+* edge-case coverage
+* requirement traceability
+
+### Architecture
+
+* finding relevance
+* consistency with repository
+* actionable recommendations
+
+### Security
+
+* signal/noise
+* false-positive rate
+* severity consistency
+
+### Developer planning
+
+* file-selection accuracy
+* requirement coverage
+* test coverage
+
+### Implementation
+
+* tests pass
+* acceptance criteria satisfied
+* diff scope
+* regression behavior
+
+### Final PR
+
+* requirements traceability
+* verification evidence
+* correct summary
+
+---
+
+# 19. Evaluation tools
+
+Use:
+
+```text
+pytest
+Promptfoo
+DeepEval
+LangSmith evaluations
+```
+
+where appropriate.
+
+Do not use all tools for the same purpose.
+
+Suggested separation:
+
+```text
+pytest
+↓
+deterministic correctness
+
+Promptfoo
+↓
+prompt/agent regression + adversarial scenarios
+
+DeepEval
+↓
+LLM-oriented quality metrics
+
+LangSmith
+↓
+tracing + datasets + experiment analysis
+```
+
+Create a small golden evaluation dataset.
+
+Example:
+
+```text
+evals/datasets/repository_discovery.jsonl
+evals/datasets/qa_analysis.jsonl
+evals/datasets/architecture_analysis.jsonl
+```
+
+---
+
+# 20. Deterministic tests
+
+The project must have extensive unit tests.
+
+Especially test:
+
+* state transitions;
+* invariants;
+* permissions;
+* agent ownership;
+* routing;
+* retry behavior;
+* idempotency;
+* tool validation;
+* persistence;
+* API contracts.
+
+These tests must NOT require an LLM.
+
+Example:
+
+```text
+test_illegal_transition_is_rejected
+test_only_assigned_agent_can_mutate
+test_done_state_has_no_agent
+test_ai_role_is_transient
+test_duplicate_orchestrator_run_is_idempotent
+```
+
+---
+
+# 21. Graph tests
+
+Create tests that execute the LangGraph workflow with mocked tools/models.
+
+Test:
+
+```text
+discover
+→ approval
+→ PO
+→ approval
+→ QA
+→ approval
+→ architecture
+→ approval
+→ security
+→ approval
+→ developer planning
+→ approval
+→ implementation
+→ QA verification
+→ approval
+→ PR
+```
+
+Do not call real GitHub or real LLMs in unit tests.
+
+Use integration tests separately.
+
+---
+
+# 22. Integration tests
+
+Integration tests may use:
+
+* PostgreSQL
+* pgvector
+* Redis
+* a test GitHub repository
+* a real model provider when explicitly enabled.
+
+Integration tests must be opt-in.
+
+Example:
+
+```bash
+pytest -m integration
+```
+
+Normal:
+
+```bash
+pytest
+```
+
+must remain fast and deterministic.
+
+---
+
+# 23. FastAPI
+
+Expose a minimal API.
+
+Example endpoints:
+
+```text
+POST /repositories/onboard
+
+POST /work-items
+
+GET /work-items/{id}
+
+POST /work-items/{id}/advance
+
+POST /work-items/{id}/approve
+
+POST /work-items/{id}/reject
+
+GET /runs/{id}
+
+GET /health
+```
+
+The API must not contain agent logic.
+
+It calls application services.
+
+---
+
+# 24. CLI
+
+Also provide a CLI.
+
+Example:
+
+```bash
+aialm onboard owner/repo
+aialm discover owner/repo
+aialm run <work-item>
+aialm approve <work-item>
+aialm status <work-item>
+aialm eval
+```
+
+The CLI should use the same application services as FastAPI.
+
+No duplicated business logic.
+
+---
+
+# 25. Persistence
+
+Use PostgreSQL as the primary database.
+
+Persist:
+
+```text
+repositories
+work_items
+agent_runs
+state_transitions
+approvals
+artifacts
+evaluations
+```
+
+Use PostgreSQL/pgvector for repository embeddings.
+
+Use Redis only when it provides real value, e.g.:
+
+* queues
+* transient coordination
+* rate limiting
+* caching
+
+Do not introduce Redis merely to make the architecture look impressive.
+
+## Persistence Invariants & Consistency
+* **Single Source of Truth**: The database is the authoritative state. Every external change (GitHub/Jira) must be validated by the state machine before being persisted.
+* **Optimistic Locking**: Implement versioning for WorkItems to prevent "lost updates" in concurrent agent/human environments.
+* **Outbox Pattern**: Use a transactional outbox for external system updates to ensure eventual consistency even after network failures.
+
+---
+
+# 26. Idempotency
+
+Every externally visible operation must be designed for retries.
+
+Examples:
+
+```text
+advance()
+approve()
+create_branch()
+create_pr()
+index_repository()
+```
+
+A retry must not accidentally:
+
+* create duplicate PRs;
+* duplicate work items;
+* duplicate state transitions;
+* corrupt state.
+
+Use explicit idempotency keys where appropriate.
+
+---
+
+# 27. Security
+
+Never commit secrets.
+
+Provide:
+
+```text
+.env.example
+```
+
+with placeholders.
+
+Expected secrets include:
+
+```text
+GITHUB_TOKEN
+OPENAI_API_KEY
+LANGSMITH_API_KEY
+```
+
+and provider-specific credentials.
+
+Never print secrets.
+
+Never send secrets to the LLM.
+
+Never allow arbitrary repository code to execute with unrestricted host permissions.
+
+Prefer Docker sandboxing for repository execution.
+
+---
+
+# 28. Docker
+
+Provide:
+
+```text
+docker-compose.yml
+```
+
+with at minimum:
+
+```text
+api
+postgres
+redis
+```
+
+Add other services only if required.
+
+The application should be runnable locally with a documented command.
+
+---
+
+# 29. Local LLM support
+
+The architecture must support local models.
+
+At minimum provide a path for:
+
+```text
+Ollama
+```
+
+through a compatible LangChain integration.
+
+The same graph should work with:
+
+```text
+cloud model
+```
+
+or:
+
+```text
+local model
+```
+
+without rewriting agents.
+
+This is an important architectural requirement.
+
+---
+
+# 30. Prompt management
+
+Do not bury large prompts inside Python functions.
+
+Store significant prompts in:
+
+```text
+prompts/
+```
+
+Use versioned prompt identifiers.
+
+Every agent should have a clearly defined:
+
+```text
+system prompt
+input contract
+output contract
+tools
+termination condition
+```
+
+---
+
+# 31. Agent design rules
+
+Agents should be small.
+
+Prefer:
+
+```text
+one agent
+one responsibility
+one output contract
+```
+
+Avoid one giant "AI ALM agent".
+
+Do not create multi-agent complexity unless the responsibility boundary is real.
+
+Use deterministic routing whenever possible.
+
+Use an LLM only where reasoning is required.
+
+---
+
+# 32. Error handling
+
+Every agent invocation must handle:
+
+```text
+timeout
+rate limit
+provider failure
+tool failure
+invalid structured output
+context overflow
+repository unavailable
+GitHub API failure
+database failure
+```
+
+Retries must be bounded.
+
+Use exponential backoff where appropriate.
+
+Never retry indefinitely.
+
+---
+
+# 33. Observability
+
+Log structured events.
+
+Example:
+
+```json
+{
+  "event": "agent_started",
+  "work_item_id": "...",
+  "agent": "aialm-qa-analyze",
+  "stage": "IN_PROGRESS_BY_AGENT"
+}
+```
+
+Use correlation IDs.
+
+A complete run should be traceable:
+
+```text
+API request
+→ graph run
+→ node
+→ agent
+→ LLM
+→ retrieval
+→ tool
+→ state transition
+```
+
+---
+
+# 34. Repository artifacts
+
+Agents should produce explicit artifacts.
+
+Examples:
+
+```text
+discovery-report.json
+requirements.json
+qa-plan.json
+architecture-report.json
+security-report.json
+implementation-plan.json
+verification-report.json
+```
+
+Artifacts must be versioned/persisted.
+
+Do not rely exclusively on conversation history.
+
+---
+
+# 35. Traceability
+
+Every implementation must be traceable to:
+
+```text
+requirement
+→ acceptance criterion
+→ implementation plan
+→ code change
+→ test
+→ verification
+→ PR
+```
+
+This is one of the defining characteristics of the product.
+
+---
+
+# 36. Human approval semantics
+
+Approval must reference the exact artifact/version being approved.
+
+For example:
+
+```text
+approval:
+    work_item_id
+    artifact_id
+    artifact_version
+    approved_by
+    approved_at
+```
+
+If the artifact changes after approval:
+
+```text
+previous approval = invalid
+```
+
+and a new approval is required.
+
+---
+
+# 37. No autonomous production mutation
+
+By default:
+
+```text
+AI may analyze
+AI may propose
+AI may prepare
+AI may implement in sandbox
+AI may test
+```
+
+But:
+
+```text
+AI must NOT merge Pull Requests automatically.
+```
+
+Creation of a final PR requires an explicit approval gate.
+
+---
+
+# 38. README requirements
+
+Create a professional README.
+
+It must explain:
+
+1. What AI ALM is.
+2. Why it exists.
+3. Architecture.
+4. Agent workflow.
+5. State machine.
+6. LangGraph role.
+7. LangChain role.
+8. MCP role.
+9. LangSmith role.
+10. RAG architecture.
+11. Evaluation architecture.
+12. Human-in-the-loop.
+13. Local LLM support.
+14. Running locally.
+15. Running tests.
+16. Running evaluations.
+17. Example workflow.
+
+Include an architecture diagram using Mermaid.
+
+---
+
+# 39. Documentation
+
+Create:
+
+```text
+docs/
+├── architecture.md
+├── state-machine.md
+├── agents.md
+├── tools.md
+├── rag.md
+├── evaluation.md
+├── observability.md
+├── security.md
+└── development.md
+```
+
+Documentation must reflect the actual implementation.
+
+Do not document hypothetical functionality as implemented.
+
+---
+
+# 40. Development methodology
+
+Use TDD where practical.
+
+Preferred cycle:
+
+```text
+requirement
+↓
+contract
+↓
+test
+↓
+implementation
+↓
+integration test
+↓
+evaluation
+```
+
+For deterministic functionality:
+
+```text
+write test first
+```
+
+For LLM functionality:
+
+```text
+define output schema
+↓
+define evaluation criteria
+↓
+implement prompt/agent
+↓
+run evaluation
+↓
+iterate
+```
+
+---
+
+# 41. AI coding agent instructions
+
+The coding agent MUST behave as an engineering agent, not as a code autocomplete system.
+
+Before implementing a significant feature:
+
+1. inspect the repository;
+2. inspect existing architecture;
+3. inspect relevant tests;
+4. inspect current dependency versions;
+5. inspect current official documentation if an external framework API is involved;
+6. propose the smallest coherent implementation;
+7. implement;
+8. run tests;
+9. fix failures;
+10. update documentation.
+
+Do not rewrite working code without a reason.
+
+Do not introduce abstractions without a use case.
+
+Do not add dependencies speculatively.
+
+---
+
+# 42. Documentation lookup rule
+
+For LangChain/LangGraph/LangSmith APIs:
+
+**official current documentation is authoritative.**
+
+Before using an unfamiliar API:
+
+```text
+search/read current documentation
+→ verify API
+→ implement
+```
+
+Do not rely on model memory for rapidly changing APIs.
+
+The LangChain ecosystem changes quickly.
+
+---
+
+# 43. MCP development rule
+
+Prefer official/current MCP interfaces and current LangChain MCP integrations.
+
+MCP should be treated as an integration boundary, not as a replacement for domain services.
+
+The domain layer must remain usable without MCP.
+
+---
+
+# 44. Evaluation quality rule
+
+Never optimize an agent solely for:
+
+```text
+"LLM said something plausible"
+```
+
+Evaluate:
+
+```text
+correctness
+relevance
+groundedness
+completeness
+traceability
+tool correctness
+structured output validity
+```
+
+Whenever possible compare agent output against deterministic ground truth.
+
+---
+
+# 45. Demo scenario
+
+The project MUST have one complete end-to-end demo.
+
+Example:
+
+```text
+Input:
+https://github.com/example/example-repository
+```
+
+Then:
+
+```text
+1. onboard repository
+2. discover repository
+3. generate improvement candidate
+4. human approval
+5. generate requirements
+6. human approval
+7. generate QA plan
+8. human approval
+9. architecture analysis
+10. human approval
+11. security analysis
+12. human approval
+13. implementation plan
+14. human approval
+15. implementation in isolated workspace
+16. run tests
+17. QA verification
+18. human approval
+19. create GitHub PR
+```
+
+The demo should be reproducible.
+
+---
+
+# 46. Definition of Done
+
+The project is NOT complete when the code merely runs.
+
+It is complete when:
+
+* [ ] LangGraph graph executes end-to-end.
+* [ ] State machine is deterministic.
+* [ ] State invariants are tested.
+* [ ] Human approval is durable.
+* [ ] Agent ownership is enforced.
+* [ ] Repository discovery works.
+* [ ] Repository RAG works.
+* [ ] GitHub integration works.
+* [ ] MCP tools work.
+* [ ] Local Ollama model can be used.
+* [ ] Cloud model can be used.
+* [ ] LangSmith tracing works.
+* [ ] Evaluation dataset exists.
+* [ ] Promptfoo and/or DeepEval evaluation works.
+* [ ] pytest suite passes.
+* [ ] FastAPI works.
+* [ ] CLI works.
+* [ ] Docker Compose works.
+* [ ] PostgreSQL works.
+* [ ] pgvector works.
+* [ ] retries are bounded.
+* [ ] operations are idempotent.
+* [ ] secrets are protected.
+* [ ] README is complete.
+* [ ] architecture documentation matches implementation.
+* [ ] an end-to-end demo can produce a traceable PR.
+
+---
+
+# 47. Implementation order
+
+Do NOT attempt to build everything simultaneously.
+
+Implement in vertical slices.
+
+## Phase 1 — foundation
+
+Build:
+
+```text
+Python
+uv
+Pydantic
+domain models
+state machine
+pytest
+```
+
+No LLM yet.
+
+---
+
+## Phase 2 — LangGraph
+
+Build:
+
+```text
+AgentState
+graph
+routing
+nodes
+checkpointing
+human approval
+```
+
+Use mocked agents.
+
+---
+
+## Phase 3 — first real agent
+
+Implement:
+
+```text
+Repository Discovery Agent
+```
+
+Use a real LLM and structured output.
+
+---
+
+## Phase 4 — tools + MCP
+
+Implement:
+
+```text
+GitHub tools
+filesystem tools
+repository tools
+test runner
+```
+
+Expose appropriate tools through MCP.
+
+---
+
+## Phase 5 — RAG
+
+Add:
+
+```text
+repository indexing
+embeddings
+pgvector
+retrieval
+```
+
+Integrate retrieval into repository-aware agents.
+
+---
+
+## Phase 6 — remaining agents
+
+Implement:
+
+```text
+PO
+QA
+ARCH
+SEC
+DEV PLAN
+DEV IMPLEMENT
+QA VERIFY
+PR
+```
+
+One responsibility at a time.
+
+---
+
+## Phase 7 — LangSmith
+
+Add:
+
+```text
+tracing
+metadata
+datasets
+runs
+evaluation hooks
+```
+
+---
+
+## Phase 8 — evaluation
+
+Add:
+
+```text
+golden datasets
+Promptfoo
+DeepEval
+regression evaluation
+```
+
+---
+
+## Phase 9 — API + CLI
+
+Add:
+
+```text
+FastAPI
+CLI
+```
+
+Both must use the same application services.
+
+---
+
+## Phase 10 — production packaging
+
+Add:
+
+```text
+Docker
+docker-compose
+documentation
+security hardening
+health checks
+```
+
+---
+
+# 48. What NOT to do
+
+Do not:
+
+* build a chatbot;
+* create one giant agent;
+* let the LLM directly manipulate database state;
+* let the LLM bypass state transitions;
+* hard-code one model provider;
+* hard-code GitHub repository names;
+* store business state only in prompts;
+* rely only on vector search;
+* call real APIs from unit tests;
+* commit secrets;
+* use deprecated LangChain APIs;
+* copy old LangGraph tutorials blindly;
+* add Kubernetes;
+* add Kafka;
+* add microservices;
+* add a frontend;
+* add unnecessary cloud infrastructure.
+
+The first version should remain understandable by one senior engineer.
+
+---
+
+# 49. Primary engineering principle
+
+The goal is not:
+
+> "Build an impressive AI demo."
+
+The goal is:
+
+> "Build a deterministic software system in which LLM agents perform bounded reasoning inside explicit contracts, state machines, tools, evaluation loops and human approval gates."
+
+The architecture should make it obvious where:
+
+```text
+deterministic software
+```
+
+ends and:
+
+```text
+probabilistic AI
+```
+
+begins.
+
+That boundary is a core feature of the system.
+
+---
+
+# 50. First task for the coding agent
+
+When starting from an empty repository:
+
+DO NOT immediately write all application code.
+
+First:
+
+1. inspect the environment;
+2. initialize the Python/uv project;
+3. create the architecture skeleton;
+4. create domain models;
+5. implement the state machine;
+6. write comprehensive state-machine tests;
+7. run the tests;
+8. only then begin LangGraph integration.
+
+At the end of Phase 1 the project should already have meaningful, passing tests even though no LLM is involved.
+
+Then continue phase by phase.
+
+Never skip directly to the final architecture just because the coding agent can generate it.
