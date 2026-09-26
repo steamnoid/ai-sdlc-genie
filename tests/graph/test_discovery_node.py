@@ -7,38 +7,41 @@ from aisdlc.graph.nodes import discover
 from aisdlc.graph.state import AgentState
 from aisdlc.tools.repository import RepositoryListing
 
+#: Fully mocked: no real model, no real GitHub (§21). The real-agent version
+#: of this flow lives in tests/e2e/.
+pytestmark = pytest.mark.graph
+
 
 @pytest.mark.asyncio
-async def test_discovery_agent_e2e_flow():
+async def test_discovery_node_maps_raw_output_to_report():
     """
-    End-to-end test for the Discovery Agent orchestration.
-    External GitHub and LLM adapters are controlled so the workflow remains
-    deterministic and can run alongside unit tests.
+    Test the Discovery node's orchestration with both external adapters
+    controlled, so the flow stays deterministic alongside the unit tests.
     """
     # Arrange
-    test_repo = "steamnoid/ai-sdlc-genie" 
+    repository_id = "owner/repo"
     initial_state: AgentState = {
-        "repository_id": test_repo,
+        "repository_id": repository_id,
         "stage": Stage.IN_PROGRESS_BY_AGENT,
         "discovery_report": None,
-        "messages": []
+        "messages": [],
     }
-    
-    response = Mock(content='''{
-        "repository_id": "steamnoid/ai-sdlc-genie",
-        "languages": [{"name": "Python"}],
-        "frameworks": [{"name": "LangGraph", "purpose": "orchestration"}],
+
+    response = Mock(content=f'''{{
+        "repository_id": "{repository_id}",
+        "languages": [{{"name": "Python"}}],
+        "frameworks": [{{"name": "LangGraph", "purpose": "orchestration"}}],
         "build_system": "uv",
         "architecture_summary": "The application separates domain state, graph orchestration, and external adapters.",
         "key_components": ["domain", "graph", "tools"]
-    }''')
+    }}''')
 
     with (
         patch(
             "aisdlc.graph.nodes.list_files",
             new=AsyncMock(
                 return_value=RepositoryListing(
-                    repository_id=test_repo, ref="HEAD", files=(), source="test"
+                    repository_id=repository_id, ref="HEAD", files=(), source="test"
                 )
             ),
         ),
@@ -46,6 +49,7 @@ async def test_discovery_agent_e2e_flow():
     ):
         result = await discover(initial_state)
 
+    # Assert: the node moved the stage and produced a validated report
     assert result["stage"] == Stage.AWAITING_HUMAN_APPROVAL
 
     report = result.get("discovery_report")

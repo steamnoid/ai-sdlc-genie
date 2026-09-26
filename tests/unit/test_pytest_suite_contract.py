@@ -48,27 +48,45 @@ def test_real_dependency_marker_is_registered(marker: str) -> None:
 
 
 def test_default_run_deselects_every_real_dependency_tier() -> None:
-    """Arrange/Act/Assert: a bare `pytest` collects no real-dependency test.
+    """Arrange/Act/Assert: a bare `pytest` executes no real-dependency test.
 
-    This is the §22 guarantee. It is asserted by collecting the suite
-    exactly as a developer would run it and checking that no e2e or
-    integration path is among the collected items.
+    This is the §22 guarantee. It is measured from an actual verbose run
+    rather than from `--collect-only`, because pytest's collection listing
+    includes deselected items and therefore cannot distinguish them from
+    executed ones.
+
+    The test deselects itself from the nested run. Without that, the
+    nested default run would collect this test, which would spawn another
+    nested run, without end.
     """
     # Act
-    result = _run_pytest("--collect-only", "-q")
+    result = _run_pytest(
+        "-v",
+        "--tb=no",
+        "-k",
+        "not test_default_run_deselects_every_real_dependency_tier",
+    )
 
     # Assert
     assert result.returncode == 0, result.stdout + result.stderr
-    collected = {
-        line.split("::", 1)[0]
+
+    outcomes = ("PASSED", "FAILED", "SKIPPED", "XFAIL", "XPASS", "ERROR")
+    executed = {
+        node_id
         for line in result.stdout.splitlines()
         if "::" in line
+        for node_id, outcome in (line.split(" ", 1),)
+        if outcome.split(" ")[0] in outcomes
     }
+
+    # The run must be non-vacuous: something really did execute.
+    assert executed, "the nested run executed nothing, so the check proves nothing"
+
     real_tier_files = {
         path
-        for path in collected
-        if path.startswith("tests/e2e") or path.startswith("tests/integration")
+        for path in executed
+        if path.startswith(("tests/e2e", "tests/integration"))
     }
     assert not real_tier_files, (
-        f"the default run collected real-dependency tests: {sorted(real_tier_files)}"
+        f"the default run executed real-dependency tests: {sorted(real_tier_files)}"
     )

@@ -49,6 +49,17 @@ aialm = "aisdlc.cli:app"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+# §22: the default run must stay fast and deterministic, so every tier that
+# needs a real model, a real network, or real infrastructure is deselected
+# here and selected explicitly with -m.
+addopts = "-m 'not e2e_smoke and not e2e and not integration'"
+markers = [
+    "graph: LangGraph flow tests with mocked models and tools (§21)",
+    "e2e_smoke: cheap real-agent gate, 1 repository, 1 provider (Rule 0.8)",
+    "e2e: real agent, real model, real repository, opt-in (Rule 0.8)",
+    "integration: real Postgres, pgvector or Redis, opt-in (§22)",
+]
 
 [tool.mypy]
 python_version = "3.12"
