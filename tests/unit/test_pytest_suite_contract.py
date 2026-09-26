@@ -10,8 +10,13 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+#: Repository root, so the nested pytest runs below resolve this project's
+#: pyproject.toml and import path no matter where pytest was invoked from.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 #: Tiers that need a real model, a real network, or real infrastructure.
 REAL_DEPENDENCY_MARKERS = ("e2e_smoke", "e2e", "integration")
@@ -28,6 +33,7 @@ def _run_pytest(*args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         check=False,
+        cwd=PROJECT_ROOT,
     )
 
 
