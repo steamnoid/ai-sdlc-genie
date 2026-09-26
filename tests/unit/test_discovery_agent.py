@@ -85,9 +85,13 @@ async def test_discover_node_rejects_structured_output_of_the_wrong_type() -> No
             new=AsyncMock(return_value=fake_repository_listing("owner/repo")),
         ),
         patch("aisdlc.graph.nodes.get_llm", return_value=fake_llm_returning_raw(wrong)),
-        pytest.raises(TypeError, match="not a DiscoveryReport"),
+        pytest.raises(RuntimeError) as excinfo,
     ):
         await discover(_state())
+
+    message = str(excinfo.value)
+    assert "expected DiscoveryReport" in message
+    assert "dict" in message
 
 
 async def test_discover_node_pins_the_report_to_the_analysed_repository() -> None:

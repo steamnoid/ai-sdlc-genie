@@ -94,7 +94,7 @@ def fake_llm_failing_methods(
     Returns:
         A mock whose ``with_structured_output`` dispatches on the method.
     """
-    error = failure or ValueError(f"method not supported by this provider")
+    error = failure or ValueError("method not supported by this provider")
 
     def with_structured_output(schema: Any, *, method: str = "", **_: Any) -> Mock:
         if method in failing_methods:

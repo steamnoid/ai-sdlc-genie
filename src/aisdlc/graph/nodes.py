@@ -52,15 +52,17 @@ MAX_CONTEXT_FILES: Final[int] = 4
 MAX_INVENTORY_PATHS: Final[int] = 400
 MAX_FILE_CHARS: Final[int] = 6_000
 
-#: How the provider is asked for structured output.
+#: Structured-output methods to try, in order, until one yields a report.
 #:
-#: `function_calling` is used rather than `json_schema` because it is the only
-#: method an OpenAI-compatible endpoint is obliged to honour. Against
-#: https://ollama.com/v1, `json_schema` and `json_mode` both return prose that
-#: fails Pydantic validation, while `function_calling` returns a validated
-#: report. §29 requires the same graph to serve a cloud model and a local
-#: Ollama model, so the widest-supported mechanism is the one to bind to.
-STRUCTURED_OUTPUT_METHOD: Final[str] = "function_calling"
+#: §29 requires the same graph to serve a cloud model and a local Ollama with
+#: no agent rewrite, and no single method is universally supported. Measured
+#: with gemma4:31b at https://ollama.com/v1 and gemma4:12b-mlx at
+#: localhost:11434: `function_calling` is the only one the cloud endpoint
+#: honours, while a local Ollama raises "Unknown tool type" for it and
+#: accepts `json_schema` instead. `json_mode` is excluded because it is the
+#: one method both providers mishandle, and a shape mismatch there is
+#: indistinguishable from a hallucination.
+STRUCTURED_OUTPUT_METHODS: Final[tuple[str, ...]] = ("function_calling", "json_schema")
 
 
 def select_context_files(files: Sequence[str]) -> tuple[str, ...]:
@@ -104,6 +106,59 @@ async def build_repository_context(repository_id: str, listing: RepositoryListin
     return "\n".join(sections)
 
 
+async def _invoke_structured(llm: Any, messages: list[Any]) -> Any:
+    """Ask the provider for structured output, trying each supported method.
+
+    §29 requires the same graph to serve a cloud model and a local Ollama
+    without rewriting the agent, and no single structured-output method is
+    honoured by every provider. This walks a fixed, bounded list of methods
+    and returns the first result that is a DiscoveryReport.
+
+    The list is finite, so the attempts are bounded exactly as §32 requires;
+    a provider that supports nothing is reported rather than retried.
+
+    Args:
+        llm: The chat model to invoke.
+        messages: The prompt to send.
+
+    Returns:
+        The first DiscoveryReport a method produced.
+
+    Raises:
+        RuntimeError: If no method produced a DiscoveryReport. The message
+            names every method attempted and the last failure, so a provider
+            problem is distinguishable from a prompt problem.
+    """
+    failures: list[str] = []
+
+    for method in STRUCTURED_OUTPUT_METHODS:
+        try:
+            structured = llm.with_structured_output(DiscoveryReport, method=method)
+            result = await structured.ainvoke(messages)
+        except Exception as error:  # noqa: BLE001 - the next method may work
+            logger.warning(
+                "Structured output via %s failed for %s; trying the next method",
+                method,
+                type(error).__name__,
+            )
+            failures.append(f"{method}: {type(error).__name__}: {error}")
+            continue
+
+        if isinstance(result, DiscoveryReport):
+            logger.info("Structured output obtained via %s", method)
+            return result
+
+        failures.append(
+            f"{method}: returned {type(result).__name__}, expected DiscoveryReport"
+        )
+
+    raise RuntimeError(
+        "Could not obtain a DiscoveryReport from the provider. "
+        f"Methods attempted: {', '.join(STRUCTURED_OUTPUT_METHODS)}. "
+        f"Details: {' | '.join(failures)}"
+    )
+
+
 async def discover(state: AgentState) -> dict[str, Any]:
     """
     Discovery Node: Analyzes the target repository using tools and LLM 
@@ -140,11 +195,12 @@ async def discover(state: AgentState) -> dict[str, Any]:
     try:
         llm = get_llm()
         try:
-            structured = llm.with_structured_output(
-                DiscoveryReport, method=STRUCTURED_OUTPUT_METHOD
-            )
-            report = await structured.ainvoke(
-                [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+            report = await _invoke_structured(
+                llm,
+                [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_prompt),
+                ],
             )
         finally:
             await _close_llm_client(llm)
