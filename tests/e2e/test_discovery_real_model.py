@@ -53,23 +53,33 @@ def _assert_grounded(report: DiscoveryReport, inventory: tuple[str, ...]) -> Non
     Rule 0.8 requires groundedness: a real agent describing a real
     repository must not cite files that are not there.
 
+    A cited entry is grounded when it is a known file, or when it is a
+    directory prefix of a known file. The inventory lists regular files
+    only, so ``src/click`` is legitimate even though no such file exists:
+    it names the directory that holds ``src/click/core.py``.
+
     Args:
         report: The report produced by the real model.
         inventory: Repository-relative paths fetched from real GitHub.
 
     Raises:
-        AssertionError: If the report cites a path absent from the inventory.
+        AssertionError: If the report cites a path that is neither a known
+            file nor a directory containing one.
     """
     cited = set(report.identified_files) | set(report.key_components)
     # Only judge entries that look like paths; a bare component name such as
-    # "domain" or "graph" is a concept, not a claim about a file.
+    # "parser" or "dispatcher" is a concept, not a claim about a location.
     path_like = {entry for entry in cited if "/" in entry or "." in entry}
     known = set(inventory)
-    invented = {
-        entry
-        for entry in path_like
-        if not any(entry == path or entry.endswith(f"/{path}") for path in known)
-    }
+
+    def is_grounded(entry: str) -> bool:
+        if entry in known:
+            return True
+        return any(
+            path.startswith(f"{entry}/") for path in known
+        )
+
+    invented = {entry for entry in path_like if not is_grounded(entry)}
     assert not invented, (
         f"report cites paths that are not in the real inventory: {sorted(invented)}"
     )

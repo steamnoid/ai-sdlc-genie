@@ -1,23 +1,37 @@
-from unittest.mock import AsyncMock, Mock, patch
+"""The Discovery node's orchestration, with both adapters controlled.
+
+No real model and no real GitHub are involved, so the flow stays
+deterministic alongside the unit suite (§21). The real-agent counterpart,
+which patches nothing, lives in tests/e2e/.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from support.fakes import (
+    discovery_report,
+    fake_llm_returning,
+    fake_repository_listing,
+)
 
 from aisdlc.domain.models import DiscoveryReport, Stage
 from aisdlc.graph.nodes import discover
 from aisdlc.graph.state import AgentState
-from aisdlc.tools.repository import RepositoryListing
 
-#: Fully mocked: no real model, no real GitHub (§21). The real-agent version
-#: of this flow lives in tests/e2e/.
+#: Fully mocked: no real model, no real network (§21).
 pytestmark = pytest.mark.graph
 
 
 @pytest.mark.asyncio
-async def test_discovery_node_maps_raw_output_to_report():
-    """
-    Test the Discovery node's orchestration with both external adapters
-    controlled, so the flow stays deterministic alongside the unit tests.
-    """
+async def test_discovery_node_maps_structured_output_to_a_report() -> None:
+    """Arrange/Act/Assert: the node yields a report and pauses for approval."""
     # Arrange
     repository_id = "owner/repo"
     initial_state: AgentState = {
@@ -27,29 +41,22 @@ async def test_discovery_node_maps_raw_output_to_report():
         "messages": [],
     }
 
-    response = Mock(content=f'''{{
-        "repository_id": "{repository_id}",
-        "languages": [{{"name": "Python"}}],
-        "frameworks": [{{"name": "LangGraph", "purpose": "orchestration"}}],
-        "build_system": "uv",
-        "architecture_summary": "The application separates domain state, graph orchestration, and external adapters.",
-        "key_components": ["domain", "graph", "tools"]
-    }}''')
-
+    # Act
     with (
         patch(
             "aisdlc.graph.nodes.list_files",
             new=AsyncMock(
-                return_value=RepositoryListing(
-                    repository_id=repository_id, ref="HEAD", files=(), source="test"
-                )
+                return_value=fake_repository_listing(repository_id)
             ),
         ),
-        patch("aisdlc.graph.nodes.get_llm", return_value=Mock(ainvoke=AsyncMock(return_value=response))),
+        patch(
+            "aisdlc.graph.nodes.get_llm",
+            return_value=fake_llm_returning(discovery_report(repository_id)),
+        ),
     ):
         result = await discover(initial_state)
 
-    # Assert: the node moved the stage and produced a validated report
+    # Assert
     assert result["stage"] == Stage.AWAITING_HUMAN_APPROVAL
 
     report = result.get("discovery_report")
