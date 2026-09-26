@@ -5,6 +5,7 @@ import pytest
 from aisdlc.domain.models import DiscoveryReport, Stage
 from aisdlc.graph.nodes import discover
 from aisdlc.graph.state import AgentState
+from aisdlc.tools.repository import RepositoryListing
 
 
 @pytest.mark.asyncio
@@ -33,8 +34,14 @@ async def test_discovery_agent_e2e_flow():
     }''')
 
     with (
-        patch("aisdlc.graph.nodes.list_files", new=AsyncMock(return_value=["pyproject.toml"])),
-        patch("aisdlc.graph.nodes.read_file", new=AsyncMock(return_value="[project]\nname = 'aisdlc'")),
+        patch(
+            "aisdlc.graph.nodes.list_files",
+            new=AsyncMock(
+                return_value=RepositoryListing(
+                    repository_id=test_repo, ref="HEAD", files=(), source="test"
+                )
+            ),
+        ),
         patch("aisdlc.graph.nodes.get_llm", return_value=Mock(ainvoke=AsyncMock(return_value=response))),
     ):
         result = await discover(initial_state)

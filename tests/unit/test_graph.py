@@ -4,6 +4,7 @@ import pytest
 
 from aisdlc.domain.models import Stage, WorkItem
 from aisdlc.graph.workflow import app
+from aisdlc.tools.repository import RepositoryListing
 
 
 @pytest.mark.asyncio
@@ -33,8 +34,12 @@ async def test_graph_initial_flow():
 
     # Act
     # The graph pauses at the explicit human-approval boundary.
+    # The mock honours the real tool contract (tools/repository.py:310).
+    listing = RepositoryListing(
+        repository_id="owner/repo", ref="HEAD", files=(), source="test"
+    )
     with (
-        patch("aisdlc.graph.nodes.list_files", new=AsyncMock(return_value=[])),
+        patch("aisdlc.graph.nodes.list_files", new=AsyncMock(return_value=listing)),
         patch("aisdlc.graph.nodes.get_llm", return_value=Mock(ainvoke=AsyncMock(return_value=response))),
     ):
         final_state = await app.ainvoke(initial_state)

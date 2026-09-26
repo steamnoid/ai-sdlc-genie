@@ -5,6 +5,7 @@ import pytest
 from aisdlc.domain.models import Stage, WorkItem
 from aisdlc.graph.nodes import discover
 from aisdlc.graph.state import AgentState
+from aisdlc.tools.repository import RepositoryListing
 
 
 @pytest.mark.asyncio
@@ -30,9 +31,14 @@ async def test_discover_node_updates_state():
     }''')
 
     # Act
-    # In LangGraph, nodes return a dictionary of field to update
+    # In LangGraph, nodes return a dictionary of field to update.
+    # The mock honours the real tool contract: list_files returns a
+    # RepositoryListing, not a bare list (tools/repository.py:310).
+    listing = RepositoryListing(
+        repository_id="owner/repo", ref="HEAD", files=(), source="test"
+    )
     with (
-        patch("aisdlc.graph.nodes.list_files", new=AsyncMock(return_value=[])),
+        patch("aisdlc.graph.nodes.list_files", new=AsyncMock(return_value=listing)),
         patch("aisdlc.graph.nodes.get_llm", return_value=Mock(ainvoke=AsyncMock(return_value=response))),
     ):
         update = await discover(state)

@@ -5,6 +5,7 @@ import pytest
 from aisdlc.domain.models import DiscoveryReport, Stage, WorkItem
 from aisdlc.graph.nodes import discover
 from aisdlc.graph.state import AgentState
+from aisdlc.tools.repository import RepositoryListing
 
 
 @pytest.mark.asyncio
@@ -31,8 +32,16 @@ async def test_discover_node_produces_report():
     }''')
 
     # Act
+    # The mock honours the real tool contract: list_files returns a
+    # RepositoryListing and read_file is keyed by that listing's ref.
+    listing = RepositoryListing(
+        repository_id="owner/repo",
+        ref="HEAD",
+        files=("pyproject.toml",),
+        source="test",
+    )
     with (
-        patch("aisdlc.graph.nodes.list_files", new=AsyncMock(return_value=["pyproject.toml"])),
+        patch("aisdlc.graph.nodes.list_files", new=AsyncMock(return_value=listing)),
         patch("aisdlc.graph.nodes.read_file", new=AsyncMock(return_value="[project]")),
         patch("aisdlc.graph.nodes.get_llm", return_value=Mock(ainvoke=AsyncMock(return_value=response))),
     ):
