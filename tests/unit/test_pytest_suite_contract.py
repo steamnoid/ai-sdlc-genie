@@ -8,6 +8,7 @@ accidentally re-admits a network tier fails the suite.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -51,6 +52,46 @@ def test_real_dependency_marker_is_registered(marker: str) -> None:
     # Assert
     assert result.returncode == 0, result.stderr
     assert f"@pytest.mark.{marker}" in result.stdout
+
+
+def test_a_credential_less_tier_skips_with_a_printed_reason() -> None:
+    """Arrange/Act/Assert: no credential means a skip that explains itself.
+
+    Rule 0.8: "A missing key or unreachable provider produces
+    `pytest.skip` with the reason printed. A green run that never called a
+    model is a lie." This proves the run cannot pass silently, and that the
+    skip is actionable.
+
+    The credential variables are set to empty strings rather than unset.
+    `aisdlc.llm.factory` calls `load_dotenv()` at import time, so unsetting
+    them would let the developer's .env quietly supply a real key and the
+    test would make a live call instead of skipping. An empty value already
+    present in the environment is not overridden.
+    """
+    # Act
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-m", "e2e_smoke", "-rs", "-q"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=PROJECT_ROOT,
+        env={
+            **os.environ,
+            "OPENAI_API_KEY": "",
+            "LLM_API_KEY": "",
+            "LLM_PROVIDER": "openai",
+            "LLM_MODEL": "gpt-5",
+        },
+    )
+
+    # Assert: a skip naming the variable, and no pass presented as success
+    combined = result.stdout + result.stderr
+    assert "skipped" in combined.lower(), combined
+    assert "OPENAI_API_KEY" in combined, combined
+    assert " 1 passed" not in combined, (
+        "the tier reported a pass while no credential was available, which is "
+        "the vacuous green Rule 0.8 forbids"
+    )
 
 
 def test_default_run_deselects_every_real_dependency_tier() -> None:
