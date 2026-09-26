@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from support.fakes import (
     discovery_report,
+    fake_llm_failing_methods,
     fake_llm_returning,
     fake_llm_returning_raw,
     fake_repository_listing,
@@ -112,3 +113,63 @@ async def test_discover_node_pins_the_report_to_the_analysed_repository() -> Non
     result = update["discovery_report"]
     assert isinstance(result, DiscoveryReport)
     assert result.repository_id == "owner/repo"
+
+
+async def test_discover_node_falls_back_when_the_provider_rejects_a_method() -> None:
+    """Arrange/Act/Assert: an unsupported method does not fail the agent.
+
+    §29 requires the same graph to serve a cloud model and a local model
+    with no agent rewrite. Measured against real providers, `json_schema`
+    fails on https://ollama.com/v1 and `function_calling` fails against a
+    local Ollama, so binding to one method cannot satisfy §29. The node
+    must try the alternatives instead.
+    """
+    # Arrange: the provider refuses function_calling but honours json_schema
+    report = discovery_report()
+    llm = fake_llm_failing_methods(
+        working_method="json_schema",
+        report=report,
+        failing_methods=("function_calling",),
+    )
+
+    # Act
+    with (
+        patch(
+            "aisdlc.graph.nodes.list_files",
+            new=AsyncMock(return_value=fake_repository_listing("owner/repo")),
+        ),
+        patch("aisdlc.graph.nodes.get_llm", return_value=llm),
+    ):
+        update = await discover(_state())
+
+    # Assert
+    assert update["discovery_report"] is report
+
+
+async def test_discover_node_reports_every_method_it_tried() -> None:
+    """Arrange/Act/Assert: total failure names what was attempted.
+
+    A silent fallback to nothing, or a bare "discovery failed", leaves the
+    next engineer unable to tell a provider problem from a prompt problem.
+    """
+    # Arrange: the provider refuses every method
+    llm = fake_llm_failing_methods(
+        working_method="never",
+        report=discovery_report(),
+        failing_methods=("function_calling", "json_schema", "json_mode"),
+    )
+
+    # Act / Assert
+    with (
+        patch(
+            "aisdlc.graph.nodes.list_files",
+            new=AsyncMock(return_value=fake_repository_listing("owner/repo")),
+        ),
+        patch("aisdlc.graph.nodes.get_llm", return_value=llm),
+        pytest.raises(RuntimeError) as excinfo,
+    ):
+        await discover(_state())
+
+    message = str(excinfo.value)
+    assert "function_calling" in message
+    assert "json_schema" in message

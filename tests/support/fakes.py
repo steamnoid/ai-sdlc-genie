@@ -69,3 +69,36 @@ def fake_llm_returning_raw(value: Any) -> Mock:
     """
     structured = Mock(ainvoke=AsyncMock(return_value=value))
     return Mock(with_structured_output=Mock(return_value=structured))
+
+
+def fake_llm_failing_methods(
+    *,
+    working_method: str,
+    report: DiscoveryReport,
+    failing_methods: tuple[str, ...],
+    failure: Exception | None = None,
+) -> Mock:
+    """A chat model that only honours one structured-output method.
+
+    §29 requires one graph to serve a cloud model and a local model, and
+    no single method is universally supported. This fake lets a test drive
+    the node down a provider that rejects the preferred method.
+
+    Args:
+        working_method: The method that should succeed.
+        report: The report the working method resolves to.
+        failing_methods: Methods that must raise, as a provider would.
+        failure: The exception to raise. Defaults to an output-parser style
+            error, which is what an unsupported method actually produces.
+
+    Returns:
+        A mock whose ``with_structured_output`` dispatches on the method.
+    """
+    error = failure or ValueError(f"method not supported by this provider")
+
+    def with_structured_output(schema: Any, *, method: str = "", **_: Any) -> Mock:
+        if method in failing_methods:
+            raise error
+        return Mock(ainvoke=AsyncMock(return_value=report))
+
+    return Mock(with_structured_output=Mock(side_effect=with_structured_output))
