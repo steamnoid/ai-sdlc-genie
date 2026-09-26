@@ -2,14 +2,14 @@ import inspect
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, Final, Sequence
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from aisdlc.domain.models import DiscoveryReport, FrameworkInfo, LanguageInfo, Stage
 from aisdlc.graph.state import AgentState
 from aisdlc.llm.factory import get_llm
-from aisdlc.tools.repository import list_files, read_file
+from aisdlc.tools.repository import RepositoryListing, list_files, read_file
 
 logger = logging.getLogger(__name__)
 
